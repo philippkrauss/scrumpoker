@@ -1,3 +1,6 @@
+from gevent import monkey as _monkey  # noqa: E402  – must be first!
+_monkey.patch_all(ssl=False)
+
 import os
 import uuid
 import time
