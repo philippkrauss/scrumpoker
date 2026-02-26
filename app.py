@@ -15,7 +15,6 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 # ---------------------------------------------------------------------------
 ai_client = OpenAI(
     base_url="https://models.github.ai/inference",
-    api_key=os.environ.get("GITHUB_TOKEN", ""),
 )
 
 # ---------------------------------------------------------------------------
