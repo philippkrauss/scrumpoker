@@ -3,11 +3,20 @@ import uuid
 import time
 from flask import Flask, render_template, request, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from openai import OpenAI
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
+
+# ---------------------------------------------------------------------------
+# GitHub-hosted LLM client
+# ---------------------------------------------------------------------------
+ai_client = OpenAI(
+    base_url="https://models.github.ai/inference",
+    api_key=os.environ.get("GITHUB_TOKEN", ""),
+)
 
 # ---------------------------------------------------------------------------
 # In-memory data store
@@ -172,6 +181,53 @@ def handle_disconnect():
                 else:
                     emit("room_update", _room_state(room_id), to=room_id)
                 break
+
+
+# ---------------------------------------------------------------------------
+# AI vote analysis
+# ---------------------------------------------------------------------------
+@socketio.on("analyze_votes")
+def handle_analyze_votes(data):
+    room_id = data.get("room_id")
+    if room_id not in rooms:
+        emit("ai_analysis", {"error": "Room not found"})
+        return
+    room = rooms[room_id]
+    if not room["revealed"]:
+        emit("ai_analysis", {"error": "Votes not revealed yet"})
+        return
+
+    # Build vote summary
+    vote_lines = []
+    for uid, p in room["participants"].items():
+        vote_lines.append(f"- {p['name']}: {p['vote'] if p['vote'] else 'did not vote'}")
+    votes_text = "\n".join(vote_lines)
+
+    prompt = (
+        f"You are a helpful Scrum Poker assistant. The team just voted on a story using the "
+        f"'{room['card_set']}' card set. Here are the votes:\n\n"
+        f"{votes_text}\n\n"
+        f"Please provide a brief summary (2-4 sentences). "
+        f"Highlight any outlying votes that are significantly different from the majority. "
+        f"If there is strong consensus, say so. "
+        f"Suggest whether the team should discuss further or can agree on an estimate. "
+        f"Keep it concise and friendly. Use one or two emojis."
+    )
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="openai/gpt-4.1",
+            messages=[
+                {"role": "system", "content": "You are a concise Scrum Poker assistant. Respond in plain text, no markdown."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=300,
+            temperature=0.7,
+        )
+        summary = response.choices[0].message.content.strip()
+        emit("ai_analysis", {"summary": summary}, to=room_id)
+    except Exception as e:
+        emit("ai_analysis", {"error": f"AI analysis failed: {str(e)}"})
 
 
 # ---------------------------------------------------------------------------
