@@ -4,6 +4,7 @@ import time
 from flask import Flask, render_template, request, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from openai import OpenAI
+import traceback
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
@@ -226,6 +227,7 @@ def handle_analyze_votes(data):
         summary = response.choices[0].message.content.strip()
         emit("ai_analysis", {"summary": summary}, to=room_id)
     except Exception as e:
+        traceback.print_exc()
         emit("ai_analysis", {"error": f"AI analysis failed: {str(e)}"})
 
 
