@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from openai import OpenAI
 import traceback
+from gevent.threadpool import ThreadPoolExecutor
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
@@ -17,6 +18,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 ai_client = OpenAI(
     base_url="https://models.github.ai/inference",
 )
+_ai_pool = ThreadPoolExecutor(max_workers=4)
 
 # ---------------------------------------------------------------------------
 # In-memory data store
@@ -215,15 +217,19 @@ def handle_analyze_votes(data):
     )
 
     try:
-        response = ai_client.chat.completions.create(
-            model="openai/gpt-4.1",
-            messages=[
-                {"role": "system", "content": "You are a concise Scrum Poker assistant. Respond in plain text, no markdown."},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=300,
-            temperature=0.7,
-        )
+        def _call_ai():
+            return ai_client.chat.completions.create(
+                model="openai/gpt-4.1",
+                messages=[
+                    {"role": "system", "content": "You are a concise Scrum Poker assistant. Respond in plain text, no markdown."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=300,
+                temperature=0.7,
+            )
+
+        future = _ai_pool.submit(_call_ai)
+        response = future.result(timeout=30)
         summary = response.choices[0].message.content.strip()
         emit("ai_analysis", {"summary": summary}, to=room_id)
     except Exception as e:
