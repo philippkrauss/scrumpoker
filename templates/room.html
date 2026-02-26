@@ -328,6 +328,38 @@ header h1 { font-size: 1.3rem; }
   .table-area { padding: 1.5rem 1rem; }
   .hand .poker-card { width: 52px; height: 74px; font-size: 1.1rem; }
 }
+
+/* ---------- AI SUMMARY ---------- */
+.ai-summary {
+  width: 100%;
+  max-width: 800px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  display: none;
+  border: 1px solid var(--primary)44;
+}
+.ai-summary.visible { display: block; }
+.ai-summary h3 {
+  margin-bottom: .8rem;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 1.1rem;
+}
+.ai-summary .ai-text {
+  color: var(--text);
+  line-height: 1.6;
+  font-size: .95rem;
+}
+.ai-summary .ai-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.ai-summary .ai-error {
+  color: var(--red);
+  font-size: .9rem;
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.8.1/socket.io.min.js"></script>
 </head>
@@ -365,6 +397,12 @@ header h1 { font-size: 1.3rem; }
     <h3>📊 Results</h3>
     <div id="resultsContent"></div>
     <div class="avg-display" id="avgDisplay"></div>
+  </div>
+
+  <!-- AI SUMMARY -->
+  <div class="ai-summary" id="aiSummary">
+    <h3>🤖 AI Analysis</h3>
+    <div id="aiContent" class="ai-loading">Analyzing votes…</div>
   </div>
 
   <!-- HAND -->
@@ -420,6 +458,22 @@ socket.on('room_update', data => {
 
 socket.on('error', data => {
   showToast(data.message);
+});
+
+// ----- AI ANALYSIS -----
+let aiRequested = false;
+
+socket.on('ai_analysis', data => {
+  const aiSummary = document.getElementById('aiSummary');
+  const aiContent = document.getElementById('aiContent');
+  aiSummary.classList.add('visible');
+  if (data.error) {
+    aiContent.className = 'ai-error';
+    aiContent.textContent = data.error;
+  } else {
+    aiContent.className = 'ai-text';
+    aiContent.textContent = data.summary;
+  }
 });
 
 // ----- RENDER -----
@@ -497,6 +551,17 @@ function render(state) {
 
   if (revealed) {
     resultsBar.classList.add('visible');
+
+    // Trigger AI analysis once per reveal
+    if (!aiRequested) {
+      aiRequested = true;
+      const aiSummary = document.getElementById('aiSummary');
+      const aiContent = document.getElementById('aiContent');
+      aiSummary.classList.add('visible');
+      aiContent.className = 'ai-loading';
+      aiContent.textContent = 'Analyzing votes…';
+      socket.emit('analyze_votes', { room_id: ROOM_ID });
+    }
     const votes = state.participants.filter(p => p.vote).map(p => p.vote);
     const voteCounts = {};
     votes.forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
@@ -534,6 +599,8 @@ function render(state) {
     }
   } else {
     resultsBar.classList.remove('visible');
+    document.getElementById('aiSummary').classList.remove('visible');
+    aiRequested = false;
   }
 }
 
